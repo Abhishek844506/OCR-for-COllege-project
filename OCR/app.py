@@ -27,7 +27,7 @@ html, body, [class*="css"] {
 
 /* Background */
 .stApp {
-    background: #f7f4ef;
+    background: #2f85f5;
 }
 
 /* Hide streamlit chrome */
@@ -367,7 +367,7 @@ st.markdown("""
         <h1>💊 RxScan</h1>
         <p>Upload a handwritten prescription — medicines are added to cart automatically</p>
     </div>
-    <span class="rx-pill">POWERED BY GEMINI</span>
+    <span class="rx-pill"></span>
 </div>
 """, unsafe_allow_html=True)
 
