@@ -1,5 +1,6 @@
 import streamlit as st
-import google.generativeai as genai
+from openai import OpenAI
+import base64
 import json
 import re
 import time
@@ -27,7 +28,7 @@ html, body, [class*="css"] {
 
 /* Background */
 .stApp {
-    background: #2f85f5;
+    background: #f7f4ef;
 }
 
 /* Hide streamlit chrome */
@@ -241,14 +242,13 @@ html, body, [class*="css"] {
 """, unsafe_allow_html=True)
 
 
-# ── Gemini setup ───────────────────────────────────────────────
+# ── OpenAI setup ───────────────────────────────────────────────
 @st.cache_resource
 def load_model():
-    api_key = st.secrets.get("GEMINI_API_KEY", "")
+    api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not api_key:
         return None
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-2.5-flash")
+    return OpenAI(api_key=api_key)
 
 
 # ── Helpers ────────────────────────────────────────────────────
@@ -276,7 +276,7 @@ def preprocess_image(pil_image: Image.Image) -> Image.Image:
 
 
 PROMPT = """
-You are a medical prescription reader. Analyze this handwritten or computer genetated prescription image carefully.
+You are a medical prescription reader. Analyze this handwritten prescription image carefully.
 
 Return ONLY a valid JSON object — no markdown, no explanation, no ```json fences.
 
@@ -315,30 +315,55 @@ Rules:
 """
 
 
-def extract_from_gemini(model, image: Image.Image) -> dict | None:
-    """Call Gemini API and parse JSON response."""
+def extract_from_openai(client, image: Image.Image) -> dict | None:
+    """Call GPT-4o vision API and parse JSON response."""
+    # Encode image to base64
     buf = io.BytesIO()
     image.save(buf, format="JPEG", quality=92)
-    image_part = {"mime_type": "image/jpeg", "data": buf.getvalue()}
+    b64_image = base64.b64encode(buf.getvalue()).decode("utf-8")
 
     for attempt in range(3):
         try:
-            response = model.generate_content([PROMPT, image_part])
-            text     = response.text.strip()
-            text     = re.sub(r'^```json\s*', '', text)
-            text     = re.sub(r'^```\s*',     '', text)
-            text     = re.sub(r'\s*```$',     '', text).strip()
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                max_tokens=1500,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{b64_image}",
+                                    "detail": "high"   # high = better OCR accuracy
+                                },
+                            },
+                            {"type": "text", "text": PROMPT},
+                        ],
+                    }
+                ],
+            )
+            text = response.choices[0].message.content.strip()
+            # Strip markdown fences if model adds them
+            text = re.sub(r'^```json\s*', '', text)
+            text = re.sub(r'^```\s*',     '', text)
+            text = re.sub(r'\s*```$',     '', text).strip()
             return json.loads(text)
+
         except json.JSONDecodeError:
             if attempt < 2:
                 time.sleep(2)
         except Exception as e:
-            if "429" in str(e) or "quota" in str(e).lower():
-                wait = 15 * (attempt + 1)
+            err = str(e)
+            if "429" in err or "rate_limit" in err.lower():
+                wait = 10 * (attempt + 1)
                 st.warning(f"Rate limit hit — waiting {wait}s...")
                 time.sleep(wait)
+            elif "insufficient_quota" in err.lower():
+                st.error("❌ OpenAI quota exceeded. Check your billing at platform.openai.com")
+                return None
             else:
-                st.error(f"Gemini error: {e}")
+                st.error(f"OpenAI error: {e}")
                 return None
     return None
 
@@ -364,10 +389,10 @@ if "analyzed"   not in st.session_state: st.session_state.analyzed   = False
 st.markdown("""
 <div class="rx-banner">
     <div>
-        <h1>💊 RxScan OCR</h1>
-        <p>Upload a prescription — medicines are added to cart automatically</p>
+        <h1>💊 RxScan</h1>
+        <p>Upload a handwritten prescription — medicines are added to cart automatically</p>
     </div>
-    <span class="rx-pill"></span>
+    <span class="rx-pill">POWERED BY GPT-4o</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -393,12 +418,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── API key check ──────────────────────────────────────────────
-model = load_model()
-if model is None:
+client = load_model()
+if client is None:
     st.markdown("""
     <div class="warn-box">
-        ⚠️ <b>Gemini API key not configured.</b><br>
-        Add <code>GEMINI_API_KEY = "your_key"</code> to your Streamlit secrets
+        ⚠️ <b>OpenAI API key not configured.</b><br>
+        Add <code>OPENAI_API_KEY = "your_key"</code> to your Streamlit secrets
         (<code>.streamlit/secrets.toml</code> locally or the Secrets tab on Streamlit Cloud).
     </div>
     """, unsafe_allow_html=True)
@@ -435,7 +460,7 @@ with col_left:
         if st.button("🔍 Analyze Prescription", use_container_width=True):
             with st.spinner("Enhancing image & reading prescription..."):
                 enhanced = preprocess_image(image)
-                result   = extract_from_gemini(model, enhanced)
+                result   = extract_from_openai(client, enhanced)
 
             if result:
                 st.session_state.parsed    = result
