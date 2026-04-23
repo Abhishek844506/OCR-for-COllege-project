@@ -28,7 +28,7 @@ html, body, [class*="css"] {
 
 /* Background */
 .stApp {
-    background: #f7f4ef;
+    background: #67C090;
 }
 
 /* Hide streamlit chrome */
@@ -276,7 +276,7 @@ def preprocess_image(pil_image: Image.Image) -> Image.Image:
 
 
 PROMPT = """
-You are a medical prescription reader. Analyze this handwritten prescription image carefully.
+You are a medical prescription reader. Analyze this handwritten or computer generated prescription image carefully.
 
 Return ONLY a valid JSON object — no markdown, no explanation, no ```json fences.
 
@@ -390,9 +390,9 @@ st.markdown("""
 <div class="rx-banner">
     <div>
         <h1>💊 RxScan</h1>
-        <p>Upload a handwritten prescription — medicines are added to cart automatically</p>
+        <p>Upload a prescription — medicines are added to cart automatically</p>
     </div>
-    <span class="rx-pill">POWERED BY GPT-4o</span>
+    <span class="rx-pill">AIMedEsy</span>
 </div>
 """, unsafe_allow_html=True)
 
